@@ -3,8 +3,10 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { config } from "../config";
 import { authenticateToken } from "../middleware/authMiddleware";
-import User from "../models/User";
-import { AuthenticatedRequest, LoginResponse, ProtectedRequest } from "../types";
+import UserModel from "../models/UserModel";
+import { AuthenticatedRequest, LoginResponse, ProtectedRequest, User } from "../types";
+import { FilterQuery } from "mongoose";
+// import { User } from "../types";
 
 const router = express.Router();
 
@@ -12,7 +14,7 @@ const router = express.Router();
 router.post("/register", async (req: Request, res: Response): Promise<void> => {
     const { fullName, email, username, password } = req.body;
     console.log(req.body)
-    const existingUser = await User.exists({
+    const existingUser = await UserModel.exists({
     $or: [{ email: email }, { username: username }]
     });
     console.log(existingUser);
@@ -22,7 +24,7 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({ fullName, email, username, password: hashedPassword });
+    const newUser = new UserModel({ fullName, email, username, password: hashedPassword });
     await newUser.save();
     res.json({ message: "User registered successfully" });
 });
@@ -30,7 +32,7 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
 // Login Route
 router.post("/login", async (req: Request, res: Response<LoginResponse>) => {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    const user = await UserModel.findOne({ email });
     console.log("user found: " + user)
     if (!user || !(await bcrypt.compare(password, user.password))) {
         res.status(401).json({ message: "Invalid credentials" });
@@ -42,9 +44,14 @@ router.post("/login", async (req: Request, res: Response<LoginResponse>) => {
 });
 
 // Protected Route
-router.get("/protected", authenticateToken, (req: AuthenticatedRequest, res: Response<ProtectedRequest>) => {
+router.get("/protected", authenticateToken, async (req: AuthenticatedRequest, res: Response<User>) => {
     console.log("arrived");
-    res.json(req.user);
+    if (req.user?.email) {
+        // const filter: FilterQuery<User> = req.user.email;
+        const user = await UserModel.findOne({ email: req.user.email });
+        console.log(user);
+        res.json({email: user?.email, fullName: user?.fullName, username: user?.username});
+    }
 });
 
 export default router;

@@ -1,8 +1,10 @@
 import { Request } from "express";
 
 export interface User {
-    email: string;
-    password: string;
+    email: string | undefined;
+    fullName: string | undefined;
+    username: string | undefined;
+    password?: string | undefined;
 }
 
 export interface RegisterRespnse {
@@ -15,8 +17,11 @@ export interface LoginResponse {
 }
 
 export interface ProtectedRequest {
-    user: User
+    email: string;
+    exp: number;
+    iat: number;
 }
+
 export interface AuthenticatedRequest extends Request {
   user?: ProtectedRequest; // Replace ProtectedRequest with the actual user type
 }
