@@ -16,11 +16,11 @@ const connectDB = async () => {
 };
 
 export const pool = new Pool({
-    user: 'postgres',
-    host: 'localhost',
-    database: 'BotaLearn',
-    password: 'admin',
-    port: 5432
+    user: config.pgUser,
+    host: config.pgHost,
+    database: config.pgDB,
+    password: config.pgPass,
+    port: Number(config.pgPort)
 });
 
 export default connectDB;
