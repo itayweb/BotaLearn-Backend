@@ -1,10 +1,12 @@
 import mongoose, { Schema, Document } from "mongoose";
+import { IPlant } from "./PlantsModel";
 
 export interface IUser extends Document {
     fullName: string;
     email: string;
     username: string;
     password: string;
+    plants: IPlant[];
 }
 
 const UserSchema = new Schema<IUser>({

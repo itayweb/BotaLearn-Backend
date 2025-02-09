@@ -3,6 +3,7 @@ import cors from "cors";
 import { config } from "./config";
 import authRoutes from "./routes/auth";
 import connectDB from "./db";
+import plantsRoutes from './routes/plants';
 
 const app: Application = express();
 app.use(cors({
@@ -16,6 +17,8 @@ app.use(express.json());
 connectDB();
 
 app.use("/api/auth", authRoutes);
+
+app.use('/api/plants', plantsRoutes);
 
 app.listen(config.port, () => {
     console.log(`Server running on port ${config.port}`);
