@@ -10,12 +10,10 @@ export interface AuthRequest extends Request {
 export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
     const token = req.header("Authorization");
     if (!token) res.status(403).json({ message: "Access denied" });
-
     else
         jwt.verify(token, config.jwtSecret, (err, user) => {
             if (err) res.status(403).json({ message: "Invalid token" });
             else {
-                console.log(user);
                 req.user = user as User;
                 next();
             }

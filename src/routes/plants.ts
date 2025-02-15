@@ -31,30 +31,13 @@ router.post("/create", async (req: Request, res: Response) => {
     }
 });
 
-router.post("/add", authenticateToken, async (req: Request, res: Response) => {
+router.post("/addPlant", authenticateToken, async (req: Request, res: Response) => {
     // const { plantid } = req.body;
-    console.log(req.query);
-    const { plantid, username } = req.query;
-    let { humidity, season, lightExposure, placement } = req.query;
+    const { plantid, username, humidity, season, light_exposure, placement } = req.body;
     try {
-        const defaultValues = await pool.query(
-            "select * from plants where id = $1", [plantid]
-        );
-        if (humidity == undefined) {
-            humidity = defaultValues.rows[0].default_humidity;
-        }
-        if (season == undefined) {
-            season = defaultValues.rows[0].default_season;
-        }
-        if (lightExposure == undefined) {
-            lightExposure = defaultValues.rows[0].default_light_exposure;
-        }
-        if (placement == undefined) {
-            placement = defaultValues.rows[0].default_placement;
-        }
         const newUserPlant = await pool.query(
             "INSERT INTO userplant (username, plantid, humidity, season, light_exposure, placement) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-            [username, plantid, humidity, season, lightExposure, placement]
+            [username, plantid, humidity, season, light_exposure, placement]
         )
         res.json({ message: "Plant linked to user successfully!" });
     } catch (err) {
@@ -67,7 +50,7 @@ router.get("/getUserPlants", authenticateToken, async (req: Request, res: Respon
     const { username } = req.query;
     try {
         const userPlants = await pool.query(
-            "select name, type from userplant join plants on plants.id = userplant.plantid where username = $1", [username]
+            "SELECT COALESCE( JSON_AGG( JSON_BUILD_OBJECT( 'plantid', USERPLANT.PLANTID, 'name', PLANTS.NAME, 'type', PLANTS.TYPE, 'humidity', USERPLANT.HUMIDITY, 'season', USERPLANT.SEASON, 'lightExposure', USERPLANT.LIGHT_EXPOSURE, 'placement', USERPLANT.PLACEMENT, 'reminders', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'reminderid', UPR.REMINDERID, 'date', UPR.REMINDERDATE, 'isFinished', UPR.IS_FINISHED ) ) FROM USERPLANTREMINDERS UPR WHERE UPR.PLANTID = USERPLANT.PLANTID AND UPR.USERNAME = USERPLANT.USERNAME ), '[]' ), 'actions', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'actionid', UPA.ACTIONID, 'stage', UPA.STAGE, 'isFinished', UPA.IS_FINISHED, 'startTS', UPA.STARTTS, 'endts', UPA.ENDTS ) ) FROM USERPLANTACTIONS UPA WHERE UPA.PLANTID = USERPLANT.PLANTID AND UPA.USERNAME = USERPLANT.USERNAME ), '[]' ) ) ) FILTER ( WHERE USERPLANT.PLANTID IS NOT NULL ), '[]' ) AS PLANTS FROM USERS LEFT JOIN USERPLANT ON USERPLANT.USERNAME = USERS.USERNAME LEFT JOIN PLANTS ON USERPLANT.PLANTID = PLANTS.ID LEFT JOIN USERPLANTREMINDERS UPR ON UPR.USERNAME = USERS.USERNAME LEFT JOIN USERPLANTACTIONS UPA ON UPA.USERNAME = USERS.USERNAME WHERE userplant.username = $1", [username]
         )
         if (userPlants.rowCount) {
             res.json({ data: userPlants.rows });
@@ -77,5 +60,22 @@ router.get("/getUserPlants", authenticateToken, async (req: Request, res: Respon
         res.status(500).json({ error: "Database error" });
     }
 });
+
+router.get("/getAvailablePlants", authenticateToken, async (req: Request, res: Response) => {
+    const { username } = req.query;
+    try {
+        const plantsNotLinked = await pool.query(
+            "select plants.* from plants where id not in (select plantid from userplant where username=$1)", [username]
+        )
+        if (plantsNotLinked.rowCount) {
+            res.json(plantsNotLinked.rows);
+        } else {
+            res.json([])
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Database error" });
+    }
+})
 
 export default router;

@@ -24,7 +24,6 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
             res.status(400).json({ message: "User already exists" });
             return;
         }
-        console.log(fullName);
         const hashedPassword = await bcrypt.hash(password, 10);
         const result = await pool.query(
         "INSERT INTO users (id, username, fullname, email, password) VALUES ($1, $2, $3, $4, $5) RETURNING *",
@@ -43,7 +42,6 @@ router.post("/login", async (req: Request, res: Response<LoginResponse>) => {
     const user = await pool.query(
         "select * from users where email = $1", [email]
     );
-    console.log(user);
     if (!user.rows[0] || !(await bcrypt.compare(password, user.rows[0].password))) {
         res.status(401).json({ message: "Invalid credentials" });
     }
