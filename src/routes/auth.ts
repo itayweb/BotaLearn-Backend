@@ -65,4 +65,6 @@ router.get("/protected", authenticateToken, async (req: AuthenticatedRequest, re
     }
 });
 
+// router.get("/validate", authenticateToken, (req: AuthenticatedRequest, res: Response<User>))
+
 export default router;
