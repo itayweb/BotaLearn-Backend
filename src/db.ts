@@ -20,7 +20,8 @@ export const pool = new Pool({
     host: config.pgHost,
     database: config.pgDB,
     password: config.pgPass,
-    port: Number(config.pgPort)
+    port: Number(config.pgPort),
+    options: "-c search_path=botalearn",
 });
 
 export default connectDB;

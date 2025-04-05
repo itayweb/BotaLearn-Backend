@@ -1,17 +1,10 @@
-import express, {Application, Request, Response} from "express";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
-import { config } from "../config";
+import express, {Request, Response} from "express";
 import { authenticateToken } from "../middleware/authMiddleware";
-import UserModel from "../models/UserModel";
-import { AuthenticatedRequest, LoginResponse, ProtectedRequest, User } from "../types";
-import { FilterQuery } from "mongoose";
-import PlantsModel from "../models/PlantsModel";
+import { AuthenticatedRequest } from "../types";
 import { pool } from "../db";
 import { randomUUID } from "crypto";
-// import { User } from "../types";
 
-const router = express.Router();
+export const router = express.Router();
 
 router.post("/create", async (req: Request, res: Response) => {
     const { defaultHumidity, defaultLightExposure, name, type, defaultSeason, defaultPlacement } = req.body;
@@ -31,26 +24,29 @@ router.post("/create", async (req: Request, res: Response) => {
     }
 });
 
-router.post("/addPlant", authenticateToken, async (req: Request, res: Response) => {
-    // const { plantid } = req.body;
-    const { plantid, username, humidity, season, light_exposure, placement } = req.body;
+router.post("/addPlant", authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+    const user_id = req.user?.id;
+    const { plant_id, planting_position } = req.body;
+    console.log(req);
     try {
         const newUserPlant = await pool.query(
-            "INSERT INTO userplant (username, plantid, humidity, season, light_exposure, placement) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-            [username, plantid, humidity, season, light_exposure, placement]
+            "INSERT INTO userplant (user_id, pid, planting_position) VALUES ($1, $2, $3) RETURNING *",
+            [user_id, plant_id, `Point (${planting_position.lat} ${planting_position.lng})`]
         )
-        res.json({ message: "Plant linked to user successfully!" });
+        if (newUserPlant.rowCount != null){
+            res.json({ message: "Plant linked to user successfully!" });
+        }
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Database error" });
     }
 });
 
-router.get("/getUserPlants", authenticateToken, async (req: Request, res: Response) => {
-    const { username } = req.query;
+router.get("/getUserPlants", authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+    const user_id = req.user?.id;
     try {
         const userPlants = await pool.query(
-            "SELECT COALESCE( JSON_AGG( JSON_BUILD_OBJECT( 'plantid', USERPLANT.PLANTID, 'name', PLANTS.NAME, 'type', PLANTS.TYPE, 'humidity', USERPLANT.HUMIDITY, 'season', USERPLANT.SEASON, 'lightExposure', USERPLANT.LIGHT_EXPOSURE, 'placement', USERPLANT.PLACEMENT, 'reminders', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'reminderid', UPR.REMINDERID, 'date', UPR.REMINDERDATE, 'isFinished', UPR.IS_FINISHED ) ) FROM USERPLANTREMINDERS UPR WHERE UPR.PLANTID = USERPLANT.PLANTID AND UPR.USERNAME = USERPLANT.USERNAME ), '[]' ), 'actions', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'actionid', UPA.ACTIONID, 'stage', UPA.STAGE, 'isFinished', UPA.IS_FINISHED, 'startTS', UPA.STARTTS, 'endts', UPA.ENDTS ) ) FROM USERPLANTACTIONS UPA WHERE UPA.PLANTID = USERPLANT.PLANTID AND UPA.USERNAME = USERPLANT.USERNAME ), '[]' ) ) ) FILTER ( WHERE USERPLANT.PLANTID IS NOT NULL ), '[]' ) AS PLANTS FROM USERS LEFT JOIN USERPLANT ON USERPLANT.USERNAME = USERS.USERNAME LEFT JOIN PLANTS ON USERPLANT.PLANTID = PLANTS.ID LEFT JOIN USERPLANTREMINDERS UPR ON UPR.USERNAME = USERS.USERNAME LEFT JOIN USERPLANTACTIONS UPA ON UPA.USERNAME = USERS.USERNAME WHERE userplant.username = $1", [username]
+            "SELECT COALESCE( JSON_AGG( JSON_BUILD_OBJECT( 'plant_id', USERPLANT.pid, 'name', PLANTS.display_pid, 'min_humidity', PLANTS.MIN_ENV_HUMID, 'max_humidity', PLANTS.MAX_ENV_HUMID, 'min_light_exposure', PLANTS.MIN_LIGHT_LUX, 'max_light_exposure', PLANTS.MAX_LIGHT_LUX, 'min_temp', PLANTS.min_temp, 'max_temp', PLANTS.max_temp, 'reminders', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'reminder_id', UPR.REMINDER_ID, 'ts', UPR.REMINDER_ts, 'is_finished', UPR.IS_FINISHED ) ) FROM botalearn.USERPLANTREMINDERS UPR WHERE UPR.pid = USERPLANT.pid AND UPR.user_id = USERPLANT.user_id ), '[]' ), 'actions', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'action_id', UPA.ACTION_ID, 'stage', UPA.STAGE, 'is_finished', UPA.IS_FINISHED, 'start_ts', UPA.START_TS, 'end_ts', UPA.END_TS ) ) FROM botalearn.USERPLANTACTIONS UPA WHERE UPA.pid = USERPLANT.pid AND UPA.user_id = USERPLANT.user_id ), '[]' ) ) ) FILTER ( WHERE USERPLANT.pid IS NOT NULL ), '[]' ) AS PLANTS FROM botalearn.USERS LEFT JOIN botalearn.USERPLANT ON USERPLANT.user_id = USERS.id LEFT JOIN botalearn.PLANTS ON USERPLANT.pid = PLANTS.pid LEFT JOIN botalearn.USERPLANTREMINDERS UPR ON UPR.user_id = USERS.id LEFT JOIN botalearn.USERPLANTACTIONS UPA ON UPA.user_id = USERS.id WHERE USERPLANT.user_id = $1", [user_id]
         )
         if (userPlants.rowCount) {
             res.json({ data: userPlants.rows });
@@ -61,11 +57,11 @@ router.get("/getUserPlants", authenticateToken, async (req: Request, res: Respon
     }
 });
 
-router.get("/getAvailablePlants", authenticateToken, async (req: Request, res: Response) => {
-    const { username } = req.query;
+router.get("/getAvailablePlants", authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+    const user_id = req.user?.id;
     try {
         const plantsNotLinked = await pool.query(
-            "select plants.* from plants where id not in (select plantid from userplant where username=$1)", [username]
+            "SELECT PLANTS.PID AS PID, PLANTS.DISPLAY_PID AS NAME, PLANTS.MIN_ENV_HUMID AS MIN_HUMIDITY, PLANTS.MAX_ENV_HUMID AS MAX_HUMIDITY, PLANTS.MIN_LIGHT_LUX AS MIN_LIGHT_EXPOSURE, PLANTS.MAX_LIGHT_LUX AS MAX_LIGHT_EXPOSURE, PLANTS.MIN_TEMP AS MIN_TEMP, PLANTS.MAX_TEMP AS MAX_TEMP, plants.image_url as image FROM BOTALEARN.PLANTS WHERE PID NOT IN ( SELECT PID FROM BOTALEARN.USERPLANT WHERE USER_ID = $1 )", [user_id]
         )
         if (plantsNotLinked.rowCount) {
             res.json(plantsNotLinked.rows);
