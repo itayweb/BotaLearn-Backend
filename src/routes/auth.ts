@@ -8,13 +8,14 @@ import { AuthenticatedRequest, LoginResponse, ProtectedRequest, User } from "../
 import { FilterQuery } from "mongoose";
 import { pool } from "../db";
 import { randomUUID } from "crypto";
-// import { User } from "../types";
 
 const router = express.Router();
 
 // Register Route
 router.post("/register", async (req: Request, res: Response): Promise<void> => {
-    const { fullName, email, username, password } = req.body;
+    let { fullName, email, username, password } = req.body;
+    username = String(username).toLowerCase();
+    email = String(email).toLowerCase();
     const id = randomUUID();
     try {
         const existingUser = await pool.query(
@@ -29,7 +30,8 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
         "INSERT INTO users (id, username, fullname, email, password) VALUES ($1, $2, $3, $4, $5) RETURNING *",
             [id, username, fullName, email, hashedPassword]
         );
-        res.json({ message: "User registered successfully" });
+        if (result.rowCount != null)
+            res.json({ message: "User registered successfully" });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Database error" });
@@ -38,7 +40,8 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
 
 // Login Route
 router.post("/login", async (req: Request, res: Response<LoginResponse>) => {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
+    email = String(email).toLowerCase();
     const user = await pool.query(
         "select * from users where email = $1", [email]
     );
@@ -46,7 +49,7 @@ router.post("/login", async (req: Request, res: Response<LoginResponse>) => {
         res.status(401).json({ message: "Invalid credentials" });
     }
     else {
-        const token = jwt.sign({ email: user.rows[0].email }, config.jwtSecret, { expiresIn: "1h" });
+        const token = jwt.sign(user.rows[0], config.jwtSecret, { expiresIn: "1h" });
         res.status(200).json({ token });
     }
 });
@@ -55,7 +58,7 @@ router.post("/login", async (req: Request, res: Response<LoginResponse>) => {
 router.get("/protected", authenticateToken, async (req: AuthenticatedRequest, res: Response<User>) => {
     if (req.user?.email) {
         const user = await pool.query(
-            "select users.username, fullname, email, coalesce(json_agg(json_build_object( 'plantid', userplant.plantid, 'name', plants.name, 'type', plants.type, 'humidity', userplant.humidity, 'season', userplant.season, 'lightExposure', userplant.light_exposure, 'placement', userplant.placement, 'reminders', coalesce((select json_agg(json_build_object( 'reminderid', upr.reminderid, 'date', upr.reminderdate, 'isFinished', upr.is_finished )) from userplantreminders upr where upr.plantid = userplant.plantid and upr.username = userplant.username), '[]'), 'actions', coalesce((select json_agg(json_build_object( 'actionid', upa.actionid, 'stage', upa.stage, 'isFinished', upa.is_finished, 'startTS', upa.startts, 'endts', upa.endts )) from userplantactions upa where upa.plantid = userplant.plantid and upa.username = userplant.username), '[]') )) filter(where userplant.plantid is not null), '[]') as plants from users left join userplant on userplant.username = users.username left join plants on userplant.plantid = plants.id left join userplantreminders upr on upr.username = users.username left join userplantactions upa on upa.username = users.username where email = $1 group by users.username, fullname, email", [req.user.email]
+            "SELECT USERS.USERNAME, FULLNAME, EMAIL, COALESCE( JSON_AGG( JSON_BUILD_OBJECT( 'plant_id', USERPLANT.PID, 'name', PLANTS.DISPLAY_PID, 'min_humidity', PLANTS.MIN_ENV_HUMID, 'max_humidity', PLANTS.MAX_ENV_HUMID, 'min_light_exposure', PLANTS.MIN_LIGHT_LUX, 'max_light_exposure', PLANTS.MAX_LIGHT_LUX, 'min_temp', PLANTS.min_temp, 'max_temp', PLANTS.max_temp, 'reminders', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'reminder_id', UPR.REMINDER_ID, 'ts', UPR.REMINDER_TS, 'is_finished', UPR.IS_FINISHED ) ) FROM botalearn.USERPLANTREMINDERS UPR WHERE UPR.PID = botalearn.USERPLANT.PID AND UPR.USER_ID = botalearn.USERPLANT.USER_ID ), '[]' ), 'actions', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'action_id', UPA.ACTION_ID, 'stage', UPA.STAGE, 'is_finished', UPA.IS_FINISHED, 'start_ts', UPA.START_TS, 'end_ts', UPA.END_TS ) ) FROM botalearn.USERPLANTACTIONS UPA WHERE UPA.PID = botalearn.USERPLANT.PID AND UPA.USER_ID = botalearn.USERPLANT.USER_ID ), '[]' ) ) ) FILTER ( WHERE botalearn.USERPLANT.PID IS NOT NULL ), '[]' ) AS PLANTS FROM botalearn.USERS LEFT JOIN botalearn.USERPLANT ON botalearn.USERPLANT.USER_ID = botalearn.USERS.ID LEFT JOIN botalearn.PLANTS ON botalearn.USERPLANT.PID = botalearn.PLANTS.pid LEFT JOIN botalearn.USERPLANTREMINDERS UPR ON UPR.USER_ID = botalearn.USERS.ID LEFT JOIN botalearn.USERPLANTACTIONS UPA ON UPA.USER_ID = botalearn.USERS.ID WHERE EMAIL = $1 GROUP BY USERS.USERNAME, FULLNAME, EMAIL", [req.user.email]
         );
         if (user.rowCount) {
             res.json(user.rows[0]);
@@ -64,6 +67,12 @@ router.get("/protected", authenticateToken, async (req: AuthenticatedRequest, re
         }
     }
 });
+
+router.get("/test", async (req: Request, res:Response): Promise<void> => {
+    const existingUser = await pool.query(
+        "select exists(select 1 from users where email = 'itay1@mail.com' or username = itay1)"
+    )
+})
 
 // router.get("/validate", authenticateToken, (req: AuthenticatedRequest, res: Response<User>))
 

@@ -1,3 +1,4 @@
+import { UUID } from "crypto";
 import { Request } from "express";
 
 export interface User {
@@ -17,7 +18,11 @@ export interface LoginResponse {
 }
 
 export interface ProtectedRequest {
+    id: UUID;
+    username: string;
+    fullname: string;
     email: string;
+    password: string;
     exp: number;
     iat: number;
 }
