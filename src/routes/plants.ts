@@ -79,14 +79,6 @@ router.get("/getAvailablePlants", authenticateToken, async (req: AuthenticatedRe
 
 router.post("/getLatestWeather", authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
     const plant = req.body.plant;
-    // axios.get("https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API key}", {
-    //     params: {
-    //         lat: plant.lat,
-    //         lon: plant.lon,
-    //         appid: '78570fb3d62398c93f0eec8e03582c7d',
-    //         units: 'metric'
-    //     }
-    // })
     const { lat, lng, measuredLux } = req.body.params;
     const sunHours = await calculateSunHours(lat, lng, measuredLux);
     const temperature = await getTemperature(lat, lng);
