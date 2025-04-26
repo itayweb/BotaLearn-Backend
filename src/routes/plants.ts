@@ -3,6 +3,9 @@ import { authenticateToken } from "../middleware/authMiddleware";
 import { AuthenticatedRequest } from "../types";
 import { pool } from "../db";
 import { randomUUID } from "crypto";
+import axios from "axios";
+import { calculateSunHours, getHumidity, getTemperature } from "../utils/weather";
+import { generatePlantCareTips } from "../utils/ai";
 
 export const router = express.Router();
 
@@ -46,7 +49,7 @@ router.get("/getUserPlants", authenticateToken, async (req: AuthenticatedRequest
     const user_id = req.user?.id;
     try {
         const userPlants = await pool.query(
-            "SELECT COALESCE( JSON_AGG( JSON_BUILD_OBJECT( 'plant_id', USERPLANT.pid, 'name', PLANTS.display_pid, 'min_humidity', PLANTS.MIN_ENV_HUMID, 'max_humidity', PLANTS.MAX_ENV_HUMID, 'min_light_exposure', PLANTS.MIN_LIGHT_LUX, 'max_light_exposure', PLANTS.MAX_LIGHT_LUX, 'min_temp', PLANTS.min_temp, 'max_temp', PLANTS.max_temp, 'reminders', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'reminder_id', UPR.REMINDER_ID, 'ts', UPR.REMINDER_ts, 'is_finished', UPR.IS_FINISHED ) ) FROM botalearn.USERPLANTREMINDERS UPR WHERE UPR.pid = USERPLANT.pid AND UPR.user_id = USERPLANT.user_id ), '[]' ), 'actions', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'action_id', UPA.ACTION_ID, 'stage', UPA.STAGE, 'is_finished', UPA.IS_FINISHED, 'start_ts', UPA.START_TS, 'end_ts', UPA.END_TS ) ) FROM botalearn.USERPLANTACTIONS UPA WHERE UPA.pid = USERPLANT.pid AND UPA.user_id = USERPLANT.user_id ), '[]' ) ) ) FILTER ( WHERE USERPLANT.pid IS NOT NULL ), '[]' ) AS PLANTS FROM botalearn.USERS LEFT JOIN botalearn.USERPLANT ON USERPLANT.user_id = USERS.id LEFT JOIN botalearn.PLANTS ON USERPLANT.pid = PLANTS.pid LEFT JOIN botalearn.USERPLANTREMINDERS UPR ON UPR.user_id = USERS.id LEFT JOIN botalearn.USERPLANTACTIONS UPA ON UPA.user_id = USERS.id WHERE USERPLANT.user_id = $1", [user_id]
+            "SELECT COALESCE( JSON_AGG( JSON_BUILD_OBJECT( 'plant_id', USERPLANT.pid, 'name', PLANTS.display_pid, 'min_humidity', PLANTS.MIN_ENV_HUMID, 'max_humidity', PLANTS.MAX_ENV_HUMID, 'avg_humidity', cast((plants.max_env_humid+plants.min_env_humid)/2 as integer), 'min_light_exposure', PLANTS.MIN_LIGHT_LUX, 'max_light_exposure', PLANTS.MAX_LIGHT_LUX, 'avg_light_exposure', cast((plants.MIN_LIGHT_LUX+plants.MAX_LIGHT_LUX)/2 as integer), 'min_temp', PLANTS.min_temp, 'max_temp', PLANTS.max_temp, 'avg_temp', cast((plants.max_temp+plants.min_temp)/2 as integer), 'planting_position', userplant.planting_position, 'base_image', plants.image_url, 'reminders', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'reminder_id', UPR.REMINDER_ID, 'ts', UPR.REMINDER_ts, 'is_finished', UPR.IS_FINISHED ) ) FROM botalearn.USERPLANTREMINDERS UPR WHERE UPR.pid = USERPLANT.pid AND UPR.user_id = USERPLANT.user_id ), '[]' ), 'actions', COALESCE( ( SELECT JSON_AGG( JSON_BUILD_OBJECT( 'action_id', UPA.ACTION_ID, 'stage', UPA.STAGE, 'is_finished', UPA.IS_FINISHED, 'start_ts', UPA.START_TS, 'end_ts', UPA.END_TS ) ) FROM botalearn.USERPLANTACTIONS UPA WHERE UPA.pid = USERPLANT.pid AND UPA.user_id = USERPLANT.user_id ), '[]' ) ) ) FILTER ( WHERE USERPLANT.pid IS NOT NULL ), '[]' ) AS PLANTS FROM botalearn.USERS LEFT JOIN botalearn.USERPLANT ON USERPLANT.user_id = USERS.id LEFT JOIN botalearn.PLANTS ON USERPLANT.pid = PLANTS.pid LEFT JOIN botalearn.USERPLANTREMINDERS UPR ON UPR.user_id = USERS.id LEFT JOIN botalearn.USERPLANTACTIONS UPA ON UPA.user_id = USERS.id WHERE USERPLANT.user_id = $1", [user_id]
         )
         if (userPlants.rowCount) {
             res.json({ data: userPlants.rows });
@@ -72,6 +75,34 @@ router.get("/getAvailablePlants", authenticateToken, async (req: AuthenticatedRe
         console.error(err);
         res.status(500).json({ error: "Database error" });
     }
-})
+});
+
+router.post("/getLatestWeather", authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+    const plant = req.body.plant;
+    // axios.get("https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API key}", {
+    //     params: {
+    //         lat: plant.lat,
+    //         lon: plant.lon,
+    //         appid: '78570fb3d62398c93f0eec8e03582c7d',
+    //         units: 'metric'
+    //     }
+    // })
+    const { lat, lng, measuredLux } = req.body.params;
+    const sunHours = await calculateSunHours(lat, lng, measuredLux);
+    const temperature = await getTemperature(lat, lng);
+    const humidity = await getHumidity(lat, lng);
+    const weatherData = {
+        sunHours,
+        temperature,
+        humidity
+    }
+    res.json({ weatherData });
+});
+
+router.post("/generatePlantCareTips", authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+    const { plantName, currentTemp, avgTemp, currentHumidity, avgHumidity, currentSunHours, avgSunHours } = req.body;
+    const tips = await generatePlantCareTips({ plantName, currentTemp, avgTemp, currentHumidity, avgHumidity, currentSunHours, avgSunHours });
+    res.json({ tips });
+});
 
 export default router;
